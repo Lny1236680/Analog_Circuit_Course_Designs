@@ -1,0 +1,288 @@
+** 0_audio_amp_redesign **
+*
+* NI Multisim to SPICE Netlist Export
+* Audio Amplifier Redesign - Op-Amp + Discrete
+* Bass +/-12dB@100Hz, Treble +/-12dB@10kHz, Pout>1W@8ohm
+*
+
+*## Multisim Component VCC ##*
+VCCVCC  VCC 0 dc 15
+
+*## Multisim Component U2 ##*
+xU2 21 0 VCC LM7815CT__VOLTAGE_REGULATOR__1
+
+*## Multisim Component U3 ##*
+xU3 21 0  VoltmeterU3
+.subckt voltmeterU3 1 2
+R1 1 2 1e6
+.ends
+
+*## Multisim Component C11 ##*
+cC11 VCC 0 0.001
+
+*## Multisim Component C9 ##*
+cC9 21 0 3.3e-07
+
+*## Multisim Component C8 ##*
+cC8 21 0 0.0047
+
+*## Multisim Component D1 ##*
+xD1 21 19 0 20 MDA2500__FWB__1
+
+*## Multisim Component T1 ##*
+xT1 17 18 19 20 T1_OPEN_5 TS_VIRTUALT1
+.SUBCKT TS_VIRTUALT1 1 2 3 4 5
+*  *1, 2-- primary winding,  *3,4-- secondary terminal, 5-- neutural
+Rs1 1 11 0.001
+Rl2 31 3 0.001
+Rl3 41 4 0.001
+L1  11 2 {0.001/2+5}
+L2  31 5 {{0.001/2+5}/{4*15*15}}
+L3  5 41 {{0.001/2+5}/{4*15*15}}
+K12  L1 L2 {1/{1+{0.001/{2*5}}}}
+K13  L1 L3 {1/{1+{0.001/{2*5}}}}
+K23  L2 L3 {1/{1+{0.001/{2*5}}}}
+.ENDS
+
+*## Multisim Component V1 ##*
+vV1 17 18 dc 0 ac 1 0
++      distof1 0 0
++      distof2 0 0
++      sin(0 {220*1.414213562} 50 0 0 0)
+
+*## Multisim Component VDD ##*
+VDDVDD  VDD 0 dc -15
+
+*## Multisim Instrument XBP1 ##*
+
+*## Multisim Instrument XSC1 ##*
+
+*## Multisim Instrument XFG1 ##*
+XFG1 XFG1_OPEN_3 0 30 XXFG1_567708952
+
+*============================================================================
+* STAGE 1: INPUT BUFFER (U1A = 1/2 TL072, voltage follower)
+*============================================================================
+
+*## Multisim Component C_IN ##*
+cC_IN 30 31 1e-05
+
+*## Multisim Component R_BIAS1 ##*
+rR_BIAS1 31 0 47000
+
+*## Multisim Component U1A ##*
+xU1A 31 32 32 VCC VDD TL072__OPAMP__1
+
+*============================================================================
+* STAGE 2: BAXANDALL TONE CONTROL (U1B = 1/2 TL072, inverting)
+*
+* Bass  pot (100k lin): endA->C_BF->OUT, endB->C_BI->IN, wiper->-IN
+* Treb  pot (100k lin): endA->C_TF->OUT, endB->C_TI->IN, wiper->-IN
+* Fixed: R_FB(100k) OUT->-IN,  R_IN(100k) IN->-IN
+* Midband gain = -1 (0dB)
+*============================================================================
+
+*## Multisim Component R_FB ##*
+rR_FB 32 33 100000
+
+*## Multisim Component R_IN ##*
+rR_IN 30 33 100000
+
+*## Multisim Component C_TF ##*
+cC_TF 32 37 1e-09
+
+*## Multisim Component C_BF ##*
+cC_BF 32 34 1e-07
+
+*## Multisim Component C_TI ##*
+cC_TI 30 38 1e-09
+
+*## Multisim Component C_BI ##*
+cC_BI 30 35 1e-07
+
+*## Multisim Component VR_BASS (100k lin) ##*
+xVR_BASS 34 36 35 PotentiometerBASS
+.subckt PotentiometerBASS 1 2 3
+R1 1 2 50000
+R2 2 3 50000
+.ends
+
+*## Multisim Component VR_TREB (100k lin) ##*
+xVR_TREB 37 39 38 PotentiometerTREB
+.subckt PotentiometerTREB 1 2 3
+R1 1 2 50000
+R2 2 3 50000
+.ends
+
+*## Multisim Component R_BW ##*
+rR_BW 36 33 0.01
+
+*## Multisim Component R_TW ##*
+rR_TW 39 33 0.01
+
+*## Multisim Component U1B ##*
+xU1B 0 33 32 VCC VDD TL072__OPAMP__1
+*    -IN +IN OUT
+
+*============================================================================
+* STAGE 3: VOLUME CONTROL (10k log pot)
+*============================================================================
+
+*## Multisim Component VR_VOL (10k log) ##*
+xVR_VOL 32 40 0 PotentiometerVOL
+.subckt PotentiometerVOL 1 2 3
+R1 1 2 5000
+R2 2 3 5000
+.ends
+
+*============================================================================
+* STAGE 4: POWER AMPLIFIER
+*   U2A (TL072) non-inverting, AC gain=16, DC gain=1
+*   Class AB output: BD139 + BD140, 2x 1N4148 bias
+*   Global feedback from SPK_OUT (45) to -IN (42)
+*============================================================================
+
+*## Multisim Component C_PAIN ##*
+cC_PAIN 40 41 1e-05
+
+*## Multisim Component R_PABIAS ##*
+rR_PABIAS 41 0 47000
+
+*## Multisim Component U2A ##*
+xU2A 41 42 43 VCC VDD TL072__OPAMP__1
+*    +IN -IN OUT
+
+*## Multisim Component R_BIAS_T ##*
+rR_BIAS_T VCC 47 10000
+
+*## Multisim Component D_BIAS1 ##*
+dD_BIAS1 47 43 DI_1N4148
+
+*## Multisim Component D_BIAS2 ##*
+dD_BIAS2 43 48 DI_1N4148
+
+*## Multisim Component R_BIAS_B ##*
+rR_BIAS_B 48 VDD 10000
+
+*## Multisim Component Q_NPN (BD139) ##*
+qQ_NPN VCC 43 49 Q_BD139
+
+*## Multisim Component Q_PNP (BD140) ##*
+qQ_PNP VDD 43 50 Q_BD140
+
+*## Multisim Component R_EMITN ##*
+rR_EMITN 49 45 0.47
+
+*## Multisim Component R_EMITP ##*
+rR_EMITP 50 45 0.47
+
+*## Multisim Component R_FB_PA ##*
+rR_FB_PA 45 42 33000
+
+*## Multisim Component R_GND ##*
+rR_GND 42 44 2200
+
+*## Multisim Component C_GND ##*
+cC_GND 44 0 4.7e-05
+
+*## Multisim Component R_ZOBEL ##*
+rR_ZOBEL 45 46 10
+
+*## Multisim Component C_ZOBEL ##*
+cC_ZOBEL 46 0 1e-07
+
+*## Multisim Component R_LOAD ##*
+rR_LOAD 45 0 8
+
+*============================================================================
+* Subcircuit: 1N4148 Diode
+*============================================================================
+.MODEL DI_1N4148 D(IS=2.682n N=1.836 RS=0.5664 BV=100
++ IBV=100u CJO=4p M=0.333 VJ=0.5 TT=11.54n)
+
+*============================================================================
+* Subcircuit: BD139 NPN Power Transistor
+*============================================================================
+.MODEL Q_BD139 NPN(IS=2.5e-13 BF=120 NF=1.0 VAF=100
++ IKF=0.5 ISE=1e-12 NE=1.5 BR=5 NR=1.0
++ VAR=40 IKR=0.25 RB=10 RC=0.25 RE=0.1
++ CJE=150p MJE=0.35 VJE=0.75 CJC=45p
++ MJC=0.35 VJC=0.75 TF=200p TR=100n)
+
+*============================================================================
+* Subcircuit: BD140 PNP Power Transistor
+*============================================================================
+.MODEL Q_BD140 PNP(IS=2.5e-13 BF=100 NF=1.0 VAF=100
++ IKF=0.5 ISE=1e-12 NE=1.5 BR=5 NR=1.0
++ VAR=40 IKR=0.25 RB=10 RC=0.25 RE=0.1
++ CJE=150p MJE=0.35 VJE=0.75 CJC=45p
++ MJC=0.35 VJC=0.75 TF=200p TR=100n)
+
+*============================================================================
+* Subcircuit: TL072 Op-Amp (simplified AC model)
+*============================================================================
+.SUBCKT TL072__OPAMP__1 3 2 6 7 4
+R_IN   3  2   1e12
+G1     0  10  3  2   1
+R1     10 0   1e6
+C1     10 0   53e-12
+E1     6  0   10 0   1
+R_OUT  6  0   75
+.ENDS
+
+*============================================================================
+* Subcircuit: LM7815 Voltage Regulator (original)
+*============================================================================
+.SUBCKT LM7815CT__VOLTAGE_REGULATOR__1 1 2 3
+R1 5  3 50
+R2 1  4 10000
+R3 3  2 10000
+V1 4  2 dc 16.3
+Q2 1 4 5 CNTL_NPN
+Q1 1 5 3 POWER_NPN
+.MODEL CNTL_NPN NPN(Is=6.734f Xti=3 Eg=1.11 Vaf=74.03 Bf=416.4 Ne=1.259
++ Ise=6.734f Ikf=66.78m Xtb=1.5 Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1
++ Cjc=3.638p Mjc=.3085 Vjc=.75 Fc=.5 Cje=4.493p Mje=.2593 Vje=.75
++ Tr=239.5n Tf=301.2p Itf=.4 Vtf=4 Xtf=2 Rb=10)
+.MODEL POWER_NPN NPN
++IS=3.41639e-13 BF=405.26 NF=1.03507 VAF=120.176
++IKF=10 ISE=8.44498e-12 NE=3.47601 BR=0.1
++NR=1.04536 VAR=1.10398 IKR=2.5029 ISC=5.50017e-13
++NC=3.93748 RB=1.80955 IRB=6.50293 RBM=1.80955
++RE=0.0001 RC=0.13777 XTB=0.1 XTI=1
++EG=1.05 CJE=6.36056e-10 VJE=0.4 MJE=0.479146
++TF=7.91835e-08 XTF=463.212 VTF=62107.5 ITF=1000
++CJC=2.70642e-10 VJC=0.95 MJC=0.406578 XCJC=0.128859
++FC=0.8 CJS=0 VJS=0.75 MJS=0.5
++TR=8.186e-05 PTF=0 KF=0 AF=1
+.ENDS
+
+*============================================================================
+* Subcircuit: Full-Wave Bridge Rectifier (original)
+*============================================================================
+.SUBCKT MDA2500__FWB__1 1 2 3 4
+D1   4  1 MDA2500
+D2   2  1 MDA2500
+D3   3  4 MDA2500
+D4   3  2 MDA2500
+.MODEL MDA2500 D (
++ IS = 9.206e-11  RS = 0.001927  CJO = 4.395e-10
++ VJ = 0.5688  TT = 5e-09  M = 0.4287  BV = 100
++ N = 1.24  EG = 1.11  XTI = 3  KF = 0  AF = 1
++ FC = 0.5  IBV = 0.0001  TNOM = 27)
+.ENDS
+
+*============================================================================
+* Subcircuit: Function Generator (original)
+*============================================================================
+.subckt XXFG1_567708952 1 2 3
+vfgen_src_positive 3 2 dc 0.000000e+00 ac 5.000000000000000278e-02 sin(0.000000000000000000e+00 5.000000000000000278e-02 1.000000000000000000e+03 0)
+vfgen_src_negative 2 1 dc 0.000000e+00 ac 5.000000000000000278e-02 sin(0.000000000000000000e+00 5.000000000000000278e-02 1.000000000000000000e+03 0)
+.ends
+
+*============================================================================
+* Analysis
+*============================================================================
+.AC DEC 100 10 100k
+.TRAN 1u 40m 0 1u
+.END

@@ -1,0 +1,181 @@
+* ============================================================================
+* 多功能音频放大器 — SPICE 网表
+* 设计目标：P_OM > 1W @8Ω, BW=20Hz~20kHz, 音调控制 ±12dB@100Hz/10kHz
+* 运放：NE5532 简化宏模型 (GBW≈10MHz, Aol≈100dB)
+* ============================================================================
+
+* ======================== 仿真选项 ========================
+.OPTIONS POST PROBE
+*.AC DEC 50 1 1MEG              * 频率响应分析
+.AC DEC 50 10 200K               * 频率响应分析 (音频范围，10Hz起)
+.TRAN 1u 50m 0 0.1u              * 瞬态分析 (50ms)
+*.NOISE V(out) Vsrc               * 噪声分析 (可选，取消注释启用)
+.TEMP 27
+.PROBE
+
+* ======================== 参数定义 ========================
+.PARAM VCC = 15                  * 正电源电压
+.PARAM VEE = -15                 * 负电源电压
+.PARAM WIPER_BASS = 0.5          * 低音电位器位置 (0=最大衰减, 0.5=平坦, 1=最大提升)
+.PARAM WIPER_TREBLE = 0.5        * 高音电位器位置 (0=最大衰减, 0.5=平坦, 1=最大提升)
+.PARAM WIPER_VOL = 0.7           * 音量电位器位置 (0=静音, 1=最大)
+
+* ======================== 仿真信号源 ========================
+* 输入信号 (100mVrms 正弦波 @1kHz)
+Vsrc  in    0    DC 0 AC 0.1414  SIN(0 0.1414 1k 0 0 0)
+Rsrc  in    0    600             * 信号源内阻 (典型线路输出阻抗)
+
+* ======================== 电源 ========================
+Vpos  VCC   0    DC {VCC}
+Vneg  VEE   0    DC {VEE}
+
+* ======================== NE5532 简化宏模型 ========================
+* 这是一个简化的双极输入运放模型，近似 NE5532 的关键参数：
+*   DC 开环增益 = 100dB (100k V/V)
+*   GBW ≈ 10 MHz
+*   输入阻抗 = 300kΩ
+*   输出阻抗 ≈ 50Ω (开环)
+*
+* 引脚: 1=同相(+)  2=反相(-)  3=正电源  4=负电源  5=输出
+.SUBCKT NE5532_SIMPLE 1 2 3 4 5
+* 输入级
+Rin   1  2  300K             * 差分输入电阻
+Cin   1  2  2P               * 差分输入电容 (近似)
+* 第一级跨导
+G1    0  6  1  2  0.01       * gm = 10mA/V, 输出节点6
+R1    6  0  10MEG            * 第一级输出电阻 → DC增益 = gm*R1 = 100k
+C1    6  0  {0.01/(2*3.1415926535*10MEG)}  
+* C1 = gm/(2π*GBW) = 0.01/(2π*10M) ≈ 0.159pF
+* 实际上: C1 = 1/(2π*R1*fp) 其中 fp = GBW/Aol = 10M/100k = 100Hz
+* C1 = 1/(2π*10M*100) = 159pF
+* 输出缓冲级
+Eout  7  0  6  0  1           * 电压缓冲
+Rout  7  5  50               * 输出电阻
+* 电源电流 (简化，静态电流约 4mA per amp)
+Rps_pos 3 8 7.5K
+Rps_neg 4 8 7.5K
+Dclamp_pos 5 3 DCLAMP
+Dclamp_neg 4 5 DCLAMP
+.ENDS
+
+.MODEL DCLAMP D (IS=1E-14 RS=1)
+
+* ======================== 第1级 — 输入缓冲 (U1A) ========================
+* U1A 接成电压跟随器
+X_U1A  in_buf  out_buf  VCC  VEE  out_buf  NE5532_SIMPLE
+* 输入耦合
+C1    in     in_buf  2.2u
+R1    in_buf 0       47K
+
+* ======================== 第2级 — Baxandall 音调控制 (U1B) ========================
+* U1B + 无源音调网络 (反馈式Baxandall)
+
+* --- 音调网络 ---
+* 低音电位器模拟 (P_BASS = 100kΩ, 用两个电阻分压模拟)
+.PARAM Rb1 = {100K * WIPER_BASS}
+.PARAM Rb2 = {100K * (1 - WIPER_BASS)}
+
+* 高音电位器模拟 (P_TREBLE = 100kΩ)
+.PARAM Rt1 = {100K * WIPER_TREBLE}
+.PARAM Rt2 = {100K * (1 - WIPER_TREBLE)}
+
+* 低音网络
+Cb1   out_buf  n1     0.047u    * C2
+Rb1a  n1       n2     {Rb1}     * P_BASS 上半段
+Cb2   n2       n3     0.047u    * C3
+Rb2a  n3       n4     {Rb2}     * P_BASS 下半段
+Rb_fixed1  n1  tb_mid  33K       * R5
+Rb_fixed2  n3  tb_mid  33K       * R6
+
+* 高音网络
+Ct1   out_buf  n5     470p      * C4
+Rt1a  n5       n6     {Rt1}     * P_TREBLE 上半段
+Rt2a  n6       n7     {Rt2}     * P_TREBLE 下半段
+R_fixed3  n5   tb_mid  33K       * R7
+
+* 音调网络汇总节点 tb_mid
+R3    out_buf  tone_in  10K       * 音调级输入电阻
+R_net tb_mid  tone_in  1          * 将音调网络连接到运放反相端 (tiny R)
+R4    tone_in  out_tone 10K       * 反馈电阻
+
+* U1B 运放 (反相放大器接法，包含音调网络在反馈回路)
+X_U1B 0  tone_in  VCC  VEE  out_tone  NE5532_SIMPLE
+
+* ======================== 第3级 — 音量控制 ========================
+* P_VOLUME = 10kΩ A型电位器 (用两个电阻模拟)
+.PARAM Rvol1 = {10K * WIPER_VOL}
+.PARAM Rvol2 = {10K * (1 - WIPER_VOL)}
+
+Rva   out_tone  vol_out  {Rvol1}
+Rvb   vol_out   0        {Rvol2}
+
+* ======================== 第4级 — 功率放大级 ========================
+* U2 + 互补输出级 (Q1=TIP41C, Q2=TIP42C)
+
+* 运放 U2 同相放大器接法
+R8    fb       out_pwr  22K       * 反馈电阻
+R10   fb       0        750       * 增益设定电阻
+* Av = 1 + R8/R10 = 1 + 22k/750 ≈ 30.3
+
+X_U2  vol_out  fb  VCC  VEE  u2_out  NE5532_SIMPLE
+
+* AB 类偏置 (两个二极管提供约 1.2V-1.4V 偏压)
+R9    VCC      bias     2.2K
+D1    bias     npn_base  D1N4148
+D2    npn_base pnp_base  D1N4148
+* 连接 U2 输出到偏置中点
+R_bias_drive  u2_out  npn_base  100
+
+* 互补输出级
+Q1    VCC      npn_base  emitter_n  QNPN_TIP41C
+Q2    VEE      pnp_base  emitter_p  QPNP_TIP42C
+R11   emitter_n  out     0.47
+R12   emitter_p  out     0.47
+Rload out      0        8          * 8Ω 负载
+
+* ======================== 二极管模型 ========================
+.MODEL D1N4148 D (IS=2.682N N=1.836 RS=0.5664 BV=100
++                 IBV=100U CJO=4P M=0.333 VJ=0.5 TT=11.54N)
+
+* ======================== 晶体管模型 ========================
+
+* TIP41C NPN 功率管模型 (简化)
+.MODEL QNPN_TIP41C NPN (IS=1E-12 BF=100 VAF=100 IKF=0.5 ISE=1E-12
++                       NE=2 BR=4 VAR=20 IKR=1.5 RB=1 RC=0.1 RE=0.05
++                       CJE=200P VJE=0.7 MJE=0.33 CJC=100P VJC=0.55
++                       MJC=0.33 TF=10N TR=1U)
+
+* TIP42C PNP 功率管模型 (简化)
+.MODEL QPNP_TIP42C PNP (IS=1E-12 BF=80 VAF=100 IKF=0.5 ISE=1E-12
++                       NE=2 BR=4 VAR=20 IKR=1.5 RB=1 RC=0.1 RE=0.05
++                       CJE=200P VJE=0.7 MJE=0.33 CJC=100P VJC=0.55
++                       MJC=0.33 TF=15N TR=1.5U)
+
+* ======================== 电源退耦电容 ========================
+Cpos   VCC    0    220u
+Cneg   0     VEE   220u
+Chf_pos VCC   0    100n
+Chf_neg 0    VEE   100n
+
+* ======================== 仿真命令 ========================
+
+* --- 频响分析 (平坦位置: WIPER_BASS=0.5, WIPER_TREBLE=0.5) ---
+.AC DEC 100 10 200K
+
+* --- 瞬态分析 ---
+.TRAN 1u 50m 0 0.1u
+
+* --- 输出测量 ---
+.MEASURE AC f_low  WHEN VDB(out)=-3  FALL=1    * 低频截止
+.MEASURE AC f_high WHEN VDB(out)=-3  RISE=LAST * 高频截止
+.MEASURE TRAN Vout_rms RMS V(out)              * 输出电压有效值
+.MEASURE TRAN Pout_rms PARAM='Vout_rms*Vout_rms/8'  * 输出功率
+
+* ======================== 音调控制扫描 (可选) ========================
+* 低音测试: 取消下行注释，运行 .AC 看 100Hz 处增益范围
+*.STEP PARAM WIPER_BASS LIST 0 0.5 1
+
+* 高音测试: 取消下行注释，运行 .AC 看 10kHz 处增益范围
+*.STEP PARAM WIPER_TREBLE LIST 0 0.5 1
+
+.END
